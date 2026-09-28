@@ -1,0 +1,11 @@
+{
+  "integration": "main",
+  "workstreams": [
+    "codex/hybrid-solver",
+    "codex/reduced-model",
+    "codex/deeponet",
+    "codex/fno-baseline",
+    "codex/active-learning"
+  ],
+  "status": "Prepared starting points; implementations are not implied."
+}
