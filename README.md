@@ -1,6 +1,9 @@
 # dysthe-learning
 
-Comparable learning methods consuming the same optical Dysthe fields and contracts.
+**Scope: water-wave Dysthe only.** See [SCOPE.md](SCOPE.md) for the fixed
+physical model, exclusions and enforced boundaries.
+
+Comparable learning methods consuming the same water-wave Dysthe fields and contracts.
 
 **Status: migration scaffold.** No solver or trained predictor has been ported
 to this repository yet. The existing research remains the source of historical

@@ -1,24 +1,26 @@
-# Adapter requirements before declaring a method implemented
+# Water-wave adapter requirements
 
-Full-field methods consume initial complex fields, equation coefficients,
-coordinates, requested times, and normalization metadata. They return physical
-complex fields on the requested grid plus measured runtime and diagnostic data.
-The training method owns its weights/basis; equation definitions live in core.
+Full-field methods consume `u(0,tau)`, steepness `epsilon`, the periodic tau grid,
+requested propagation positions `xi` and normalization metadata. They return
+physical complex envelopes `u(xi,tau)`, measured runtime and diagnostic data.
+Case schema 2 and water-wave-dysthe-spatial-v1 are mandatory. The numerical RHS
+and its nonlocal mean-flow operator belong to core, not individual ML adapters.
 
-Keep one-step models and direct space-time predictors explicit. Define exactly
-which inputs are available at inference; targets and future reference fields
-must never enter a rollout. A new initial condition must not trigger retraining
-when measuring operator generalization.
+Distinguish propagation steppers from direct `(xi,tau)` predictors. Targets and
+future reference fields must never enter inference. New initial packets must
+not trigger retraining when evaluating operator generalization.
 
-The active GP consumes a declared finite parameter vector and predicts selected
-scalar observables with uncertainty. Evaluate calibration and simulation budget;
-do not compare its scalar output as though it reconstructs the full field.
+The active GP maps bounded packet parameters to selected scalar measurements,
+such as peak amplification or propagation distance to a focusing event. Evaluate
+scalar error, calibration and simulation budget separately from field methods.
 
-Before changing `implemented` to true, provide an adapter, tiny fit/predict test,
-checkpoint round trip where applicable, determinism metadata and a held-out
-evaluation smoke run. Those checks establish execution, not accuracy.
+Before marking a method implemented, provide a tiny fit/predict test, checkpoint
+round trip, determinism metadata and held-out evaluation smoke run. Execution
+checks do not establish accuracy. The registry remains unimplemented for now.
 
-Early stopping, validation rollouts, best/last checkpoints, resume state and
-physics-loss component logging belong to the shared training infrastructure.
-Compute physical penalties from the selected equation and normalization. Do not
-reuse Vlasov positivity, particle energy, or Landau damping losses for Dysthe.
+Shared training must include validation-rollout early stopping, best/last
+checkpoints, resume state and component-wise physics-loss logs. Use the selected
+water-wave PDE residual, periodicity, initial condition and verified wave-action
+constraint; add other invariants only after verifying this noncanonical envelope
+and boundary convention. Assess each loss by ablation and phase/field error.
+Generic conservation is not sufficient, and foreign physical losses are excluded.

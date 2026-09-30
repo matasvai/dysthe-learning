@@ -1,4 +1,7 @@
-from dysthe_core import MODEL_ID
+from dysthe_core import MODEL_ID, PHYSICAL_SYSTEM
+
+if MODEL_ID != 'water-wave-dysthe-spatial-v1' or PHYSICAL_SYSTEM != 'deep-water-gravity-waves':
+    raise RuntimeError('Scope violation: learning requires the approved water-wave core')
 
 METHODS = {
     'hybrid': {'target': 'field', 'branch': 'codex/hybrid-solver', 'implemented': False},
