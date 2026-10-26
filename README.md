@@ -5,9 +5,11 @@ physical model, exclusions and enforced boundaries.
 
 Comparable learning methods consuming the same water-wave Dysthe fields and contracts.
 
-**Status: migration scaffold.** No solver or trained predictor has been ported
-to this repository yet. The existing research remains the source of historical
-evidence; no new accuracy result is claimed here.
+**Status: executable CPU pilot models.** `ContinuousFNO` and `SpectralPINN` are
+implemented in `dysthe_learning.pilot_models`, with hard projected initial data,
+complex fields and continuous-distance derivatives. PINO uses the FNO backbone
+with the full Dysthe residual in the experiment trainer. The general method
+registry remains a scaffold; these bounded pilot APIs are called directly.
 
 [Research map](https://matasvai.github.io/dysthe-research-map/) ·
 [Family guide](https://github.com/matasvai/dysthe-research-map/blob/main/FAMILY.md) ·
@@ -24,3 +26,21 @@ python scripts/check.py
 
 Python 3.10+ is required. Training libraries will be added by the relevant method
 ports; the scaffold does not install a GPU runtime or submit cluster jobs.
+
+## Measured pilot and A100 continuation
+
+Workstream: `codex/cpu-pilot-a100`. Install `.[pilot]` and run
+`python scripts/check.py`. Physics is pinned to a published core commit.
+
+The [experiment workstream](https://github.com/matasvai/dysthe-experiments/tree/codex/cpu-pilot-a100)
+contains configs, training/resume code, CPU measurements, editable report, and
+the single-A100 Slurm launcher. Short sequential PINN slabs are the selected
+**per-inlet research candidate**. FNO/PINO failed the pilot accuracy gates;
+no learned operator or speed advantage is claimed. Every new PINN inlet
+requires optimization. Raw fields and trained checkpoints remain outside Git.
+
+Model output bandwidth is explicit and independent of latent Fourier modes.
+The full residual is evaluated on complete periodic slices at sufficient
+quadrature resolution, including nonlinear modes outside the output band.
+The checkpoint tests cover complex precision and AD through propagation
+derivatives. CUDA execution is prepared but must be verified on the cluster.
