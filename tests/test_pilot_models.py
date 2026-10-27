@@ -1,6 +1,7 @@
 """Execution checks for the bounded pilot, not trained accuracy claims."""
 
 import io
+import math
 import unittest
 
 import torch
@@ -79,6 +80,65 @@ class PilotModels(unittest.TestCase):
         torch.testing.assert_close(expected, restored(self.distance.float()), rtol=0, atol=0)
         with self.assertRaisesRegex(ValueError, "one complex inlet"):
             SpectralPINN(self.inlet, 40, max_mode=12)
+
+    def test_spectral_scaling_is_invertible_and_preserves_the_initial_field(self):
+        unscaled = SpectralPINN(self.inlet[0], 40, max_mode=12, width=8, depth=2)
+        scaled = SpectralPINN(self.inlet[0], 40, max_mode=12, width=8, depth=2,
+                              coefficient_scaling="inverse_1_plus_k2")
+        scaled.network.load_state_dict(unscaled.network.state_dict())
+        # Compensating the last affine map recovers exactly the same functions:
+        # no Fourier mode or nonlinear part of the PDE has been discarded.
+        modes = torch.arange(-12, 13, dtype=torch.float64)
+        inverse_scale = (1 + (2 * math.pi * modes / 40).square()).repeat_interleave(2)
+        with torch.no_grad():
+            scaled.network[-1].weight.mul_(inverse_scale[:, None])
+            scaled.network[-1].bias.mul_(inverse_scale)
+        torch.testing.assert_close(scaled(self.distance), unscaled(self.distance), atol=1e-12, rtol=1e-12)
+        torch.testing.assert_close(scaled(0.0)[0], project(self.inlet[0], 12))
+        value, derivative = value_and_distance_derivative(scaled, self.distance)
+        h = 1e-6
+        fd = (scaled(self.distance + h) - scaled(self.distance - h)) / (2 * h)
+        torch.testing.assert_close(derivative, fd, atol=2e-9, rtol=2e-7)
+        (derivative.abs().square().mean() + value.abs().square().mean()).backward()
+        self.assertTrue(all(p.grad is not None and torch.isfinite(p.grad).all() for p in scaled.parameters()))
+
+    def test_spectral_scaling_uses_physical_wavenumbers_after_precision_conversion(self):
+        for length in (20., 40.):
+            with self.subTest(length=length):
+                model = SpectralPINN(torch.zeros(64, dtype=torch.complex128), length,
+                                      max_mode=12, width=4, depth=1,
+                                      coefficient_scaling="inverse_1_plus_k2").float().double()
+                with torch.no_grad():
+                    for parameter in model.parameters():
+                        parameter.zero_()
+                    model.network[-1].bias[2 * (12 + 3)] = 1.
+                coefficients = torch.fft.fft(model(.2)[0], norm="forward")
+                expected = .2 / (1 + (2 * math.pi * 3 / length)**2)
+                torch.testing.assert_close(coefficients[3], torch.tensor(expected, dtype=torch.complex128),
+                                           rtol=1e-13, atol=1e-13)
+                self.assertEqual(model.correction_modes.dtype, torch.int64)
+
+    def test_spectral_scaling_checkpoint_configuration_and_legacy_loading(self):
+        legacy = SpectralPINN(self.inlet[0], 40, max_mode=12, width=8, depth=2)
+        legacy_config = {k: v for k, v in legacy.config.items() if k != 'coefficient_scaling'}
+        restored_legacy = SpectralPINN(torch.zeros_like(self.inlet[0]), **legacy_config)
+        restored_legacy.load_state_dict(legacy.state_dict(), strict=True)
+        torch.testing.assert_close(restored_legacy(self.distance), legacy(self.distance), rtol=0, atol=0)
+        scaled = SpectralPINN(self.inlet[0], 40, max_mode=12, width=8, depth=2,
+                              coefficient_scaling='inverse_1_plus_k2').float()
+        stream = io.BytesIO()
+        torch.save({'config': scaled.config, 'state_dict': scaled.state_dict()}, stream)
+        stream.seek(0)
+        saved = torch.load(stream, weights_only=True)
+        restored = SpectralPINN(torch.zeros(64, dtype=torch.complex64), **saved['config'])
+        restored.load_state_dict(saved['state_dict'], strict=True)
+        torch.testing.assert_close(restored(self.distance.float()), scaled(self.distance.float()), rtol=0, atol=0)
+        with self.assertRaisesRegex(RuntimeError, '_coefficient_scaling_code'):
+            legacy.load_state_dict(scaled.state_dict(), strict=True)
+        with self.assertRaisesRegex(RuntimeError, '_coefficient_scaling_code'):
+            scaled.load_state_dict(legacy.state_dict(), strict=True)
+        with self.assertRaisesRegex(ValueError, 'coefficient_scaling'):
+            SpectralPINN(self.inlet[0], 40, coefficient_scaling='filter')
 
     def test_rejects_invalid_shapes_and_nyquist_bandwidth(self):
         model = ContinuousFNO(40, width=4, modes=3, depth=1, max_mode=32)

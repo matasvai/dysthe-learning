@@ -6,7 +6,8 @@
     "codex/deeponet",
     "codex/fno-baseline",
     "codex/active-learning",
-    "codex/cpu-pilot-a100"
+    "codex/cpu-pilot-a100",
+    "codex/pinn-h2-rerun"
   ],
-  "status": "CPU pilot workstream added; measured qualification and limitations are recorded in experiment results."
+  "status": "Canonical-inlet and spectral PINN conditioning repair; historical evidence retained, A100 rerun pending."
 }

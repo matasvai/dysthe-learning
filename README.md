@@ -44,3 +44,18 @@ The full residual is evaluated on complete periodic slices at sufficient
 quadrature resolution, including nonlinear modes outside the output band.
 The checkpoint tests cover complex precision and AD through propagation
 derivatives. CUDA execution is prepared but must be verified on the cluster.
+
+## Spectral PINN conditioning repair
+
+Workstream `codex/pinn-h2-rerun` adds the explicit
+`coefficient_scaling='inverse_1_plus_k2'` option to `SpectralPINN`. Learned
+correction coefficients are divided by `1 + (2*pi*m/length)^2`; this invertible
+parameterization retains every output mode and the original trial-function
+capacity. It does not alter the water-wave equation, inlet, or residual.
+`'none'` remains the default for historical models. Scaled checkpoints carry
+a state marker so strict loading cannot silently reinterpret them as unscaled.
+
+The [experiment rerun guide](https://github.com/matasvai/dysthe-experiments/blob/codex/pinn-h2-rerun/docs/h2-rerun.md)
+contains matched controls, CPU evidence, and the A100 workflow. This is a tested
+conditioning candidate; A100 accuracy and long-distance smoothness claims
+require the new campaign results.

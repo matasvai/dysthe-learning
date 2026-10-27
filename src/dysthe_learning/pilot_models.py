@@ -137,11 +137,16 @@ class SpectralPINN(nn.Module):
     Coefficients use the DFT basis at the inlet array's shared grid origin.
     Real/imaginary inlet buffers permit safe precision conversion with
     ``.float()`` and ``.double()`` and are included in the state dictionary.
+
+    ``coefficient_scaling='inverse_1_plus_k2'`` multiplies the learned
+    correction coefficients by ``1 / (1 + (2*pi*m/length)**2)``. This is an
+    invertible change of parameterization on the retained modes, not a filter
+    on the inlet or a change to the PDE. The legacy default is ``'none'``.
     """
 
     def __init__(self, u0: Tensor, length: float, max_mode: int = 24,
                  width: int = 32, depth: int = 2, activation: str = "tanh",
-                 distance_scale: float = 1.0):
+                 distance_scale: float = 1.0, coefficient_scaling: str = "none"):
         super().__init__()
         if u0.ndim == 2 and u0.shape[0] == 1:
             u0 = u0[0]
@@ -149,18 +154,31 @@ class SpectralPINN(nn.Module):
             raise ValueError("u0 must be one complex inlet, shape [profile] or [1, profile]")
         if min(width, depth) < 1:
             raise ValueError("width and depth must be positive")
+        if coefficient_scaling not in ("none", "inverse_1_plus_k2"):
+            raise ValueError("coefficient_scaling must be 'none' or 'inverse_1_plus_k2'")
         _bandwidth(max_mode, u0.shape[-1])
         self.length = _positive(length, "length")
         self.distance_scale = _positive(distance_scale, "distance_scale")
         self.max_mode = int(max_mode)
+        self.coefficient_scaling = coefficient_scaling
         self.config = dict(length=self.length, max_mode=self.max_mode, width=width,
                            depth=depth, activation=activation,
-                           distance_scale=self.distance_scale)
+                           distance_scale=self.distance_scale,
+                           coefficient_scaling=self.coefficient_scaling)
         inlet = project(u0.detach(), self.max_mode)
         self.register_buffer("inlet_real", inlet.real.clone())
         self.register_buffer("inlet_imag", inlet.imag.clone())
         self.register_buffer("mode_indices", torch.arange(-self.max_mode, self.max_mode + 1,
                                                           device=u0.device) % u0.shape[-1])
+        # Integer modes recompute the scale in the current real dtype, including
+        # after .float().double(); no rounded float32 scale is silently reused.
+        self.register_buffer("correction_modes", torch.arange(-self.max_mode, self.max_mode + 1,
+                                                               device=u0.device), persistent=False)
+        # Legacy unscaled state dictionaries remain strictly loadable. Scaled
+        # checkpoints carry a marker so a strict load into an unscaled model
+        # cannot silently change the trial function (or vice versa).
+        self.register_buffer("_coefficient_scaling_code",
+                             torch.tensor(1, device=u0.device) if coefficient_scaling != "none" else None)
         layers: list[nn.Module] = []
         for index in range(depth):
             layers.extend((nn.Linear(1 if index == 0 else width, width), _activation(activation)))
@@ -182,6 +200,9 @@ class SpectralPINN(nn.Module):
             raise ValueError("s must be scalar or a one-dimensional batch")
         pairs = self.network((distance / self.distance_scale)[:, None])
         coefficients = torch.view_as_complex(pairs.reshape(distance.shape[0], -1, 2).contiguous())
+        if self.coefficient_scaling == "inverse_1_plus_k2":
+            k = self.correction_modes.to(dtype=self.inlet_real.dtype) * (2 * math.pi / self.length)
+            coefficients = coefficients / (1 + k.square())
         spectrum = coefficients.new_zeros(distance.shape[0], self.inlet_real.shape[0])
         spectrum = spectrum.index_copy(-1, self.mode_indices, coefficients)
         correction = torch.fft.ifft(spectrum, dim=-1, norm="forward")
